@@ -19,9 +19,9 @@ if not api_key:
 
 genai.configure(api_key=api_key)
 
-# 上位モデルを使用
+# 1日1,500回まで無料・高精度な主力モデルを指定
 model = genai.GenerativeModel(
-    "gemini-3.8-flash",
+    "gemini-2.0-flash",
     generation_config={"temperature": 0.0}
 )
 
@@ -64,7 +64,7 @@ if uploaded_files:
     st.write(f"📁 アップロードされた画像: {len(uploaded_files)} 枚")
     
     if st.button("凸数を解析する", type="primary"):
-        with st.spinner("AIが画面に見えている武将だけを抽出中...（30秒ほどお待ちください）"):
+        with st.spinner("AIが画面に見えている武将だけを正確に照合中..."):
             try:
                 processed_images = [optimize_image(f) for f in uploaded_files]
 
@@ -88,7 +88,7 @@ if uploaded_files:
 - すべて灰色 ➡️ 0
 
 【注意】
-- 新旧のある武将（信、楊端和、嬴政、羌瘣、河了貂）は、外見や天賦を見て必ず「(新)信」や「(旧)楊端和」のように新旧をつけて書いてください。
+- 新旧のある武将（信、楊端和、嬴政、羌瘣、河了貂）は、外見を見て必ず「(新)信」や「(旧)楊端和」のように新旧をつけて書いてください。
 - 暗くグレーアウト（鍵付き）している未所持武将はリストに書かないでください。
 解説は一切不要です。リストの行だけを出力してください。
 """
@@ -105,25 +105,19 @@ if uploaded_files:
                             raw_name = parts[0].strip()
                             raw_val = parts[1].strip()
                             
-                            # 数字を抽出（0〜7）
                             num_match = re.search(r"[0-7]", raw_val)
                             if num_match:
                                 star_val = num_match.group(0)
-                                
-                                # 完全一致でマスターリストと照合
                                 for target in list_900 + list_850:
-                                    # 1. 新旧表記がある場合は完全一致
                                     if target == raw_name:
                                         found_stars[target] = star_val
-                                    # 2. 新旧なしのキャラは名前完全一致
                                     elif "(" not in target and target == raw_name:
                                         found_stars[target] = star_val
-                                    # 3. AIが新旧をつけ忘れた場合の救済（画像に写っていた側を採用）
                                     elif target.replace("(新)", "").replace("(旧)", "") == raw_name:
                                         if target not in found_stars:
                                             found_stars[target] = star_val
 
-                # テンプレート通りに組み立て（見つからなかったキャラはすべて「なし」）
+                # テンプレート通りに組み立て（見つからなかったキャラはすべて自動で「なし」）
                 output = "【900】\n"
                 for c in list_900:
                     star = found_stars.get(c, "なし")
