@@ -18,15 +18,15 @@ if not api_key:
 
 genai.configure(api_key=api_key)
 
-# 最新モデルを指定
-model = genai.GenerativeModel("gemini-3.8-flash")
+# 思考なしで爆速処理できる Flash-Lite モデルを指定
+model = genai.GenerativeModel("gemini-3.5-flash-lite")
 
-# 画像を極力軽量化する（1枚あたり数十KBにする）
+# 画像を極力軽量化する（長辺600px）
 def resize_image(file):
     img = Image.open(file)
     if img.mode in ("RGBA", "P"):
         img = img.convert("RGB")
-    img.thumbnail((700, 700))
+    img.thumbnail((600, 600))
     buffer = io.BytesIO()
     img.save(buffer, format="JPEG", quality=70)
     buffer.seek(0)
@@ -106,7 +106,7 @@ character_template = """
 """
 
 uploaded_files = st.file_uploader(
-    "キャラ一覧のスクショを選択（何枚でもまとめてOK）", 
+    "キャラ一覧のスクショを選択（複数まとめてOK）", 
     type=["png", "jpg", "jpeg"], 
     accept_multiple_files=True
 )
@@ -115,9 +115,8 @@ if uploaded_files:
     st.write(f"📁 アップロードされた画像: {len(uploaded_files)} 枚")
     
     if st.button("凸数を解析する", type="primary"):
-        with st.spinner("画像を最適化してAIが一括解析中...（10〜20秒ほどお待ちください）"):
+        with st.spinner("画像を最適化してAIが高速解析中...（10〜20秒ほどお待ちください）"):
             try:
-                # すべての画像を軽量化
                 processed_images = [resize_image(f) for f in uploaded_files]
 
                 prompt = f"""
@@ -132,7 +131,7 @@ if uploaded_files:
 【キャラ一覧リスト】
 {character_template}
 """
-                # 1回のリクエストですべてまとめて送信（制限に引っかからない）
+                # 思考なしのLiteモデルで一発高速処理
                 response = model.generate_content([prompt, *processed_images])
                 result_text = response.text
 
