@@ -1,5 +1,6 @@
 import streamlit as st
 from PIL import Image
+import io
 import google.generativeai as genai
 
 st.set_page_config(page_title="キングダム覇道 凸数読み取りツール", layout="centered")
@@ -7,7 +8,7 @@ st.set_page_config(page_title="キングダム覇道 凸数読み取りツール
 st.title("🛡️ 凸数スクショ読み取りツール")
 st.caption("キャラ一覧のスクショをアップロードすると、凸数を一覧出力します。")
 
-# StreamlitのSecrets（環境変数）からAPIキーを読み込む
+# StreamlitのSecretsからAPIキーを取得
 api_key = st.secrets.get("GEMINI_API_KEY")
 if not api_key:
     api_key = st.text_input("Gemini APIキーを入力してください", type="password")
@@ -17,7 +18,21 @@ if not api_key:
     st.stop()
 
 genai.configure(api_key=api_key)
-model = genai.GenerativeModel("gemini-1.5-flash")
+
+# 利用可能な最新モデルを自動判別する関数（404エラー防止）
+def get_best_model():
+    try:
+        models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        # 最新の高速モデルを優先的に探す
+        for pref in ["gemini-2.5-flash", "gemini-2.0-flash", "flash"]:
+            for m in models:
+                if pref in m:
+                    return genai.GenerativeModel(m)
+        if models:
+            return genai.GenerativeModel(models[0])
+    except Exception:
+        pass
+    return genai.GenerativeModel("gemini-2.5-flash")
 
 # キャラテンプレート
 character_template = """
@@ -94,18 +109,30 @@ character_template = """
 """
 
 uploaded_files = st.file_uploader(
-    "キャラ一覧のスクショをすべて選択（複数選択可）", 
+    "キャラ一覧のスクショを選択（複数まとめて選択可能）", 
     type=["png", "jpg", "jpeg"], 
     accept_multiple_files=True
 )
 
+# 画像を自動圧縮する関数（複数枚アップロード時の容量オーバー対策）
+def resize_image(file):
+    img = Image.open(file)
+    if img.mode in ("RGBA", "P"):
+        img = img.convert("RGB")
+    img.thumbnail((1000, 1000))
+    buffer = io.BytesIO()
+    img.save(buffer, format="JPEG", quality=80)
+    buffer.seek(0)
+    return Image.open(buffer)
+
 if uploaded_files:
-    st.write(f"アップロードされた画像: {len(uploaded_files)} 枚")
+    st.write(f"📁 アップロードされた画像: {len(uploaded_files)} 枚")
     
     if st.button("凸数を解析する", type="primary"):
-        with st.spinner("AIが武将と星の数を解析中...（10〜20秒ほどかかります）"):
+        with st.spinner("画像を軽量化して最新AIが解析中...（15〜30秒ほどかかります）"):
             try:
-                images = [Image.open(f) for f in uploaded_files]
+                processed_images = [resize_image(f) for f in uploaded_files]
+                model = get_best_model()
 
                 prompt = f"""
 添付されたゲーム画面のスクリーンショットを解析し、武将の凸数（星の数: 0〜7）を特定してください。
@@ -119,11 +146,11 @@ if uploaded_files:
 【キャラ一覧リスト】
 {character_template}
 """
-                response = model.generate_content([prompt, *images])
+                response = model.generate_content([prompt, *processed_images])
                 result_text = response.text
 
                 st.success("解析完了！")
-                st.text_area("解析結果（コピー用）", value=result_text, height=400)
+                st.text_area("解析結果（コピー用）", value=result_text, height=450)
 
             except Exception as e:
-                st.error(f"エラーが発生しました: {e}")
+                st.error(f"エラー内容: {e}")
