@@ -18,13 +18,13 @@ if not api_key:
 
 genai.configure(api_key=api_key)
 
-# 視覚認識モデル（温度を低くして当てずっぽうを完全排除）
+# 無料枠が別枠で高速に動く gemini-3.5-flash-lite を指定
 model = genai.GenerativeModel(
-    "gemini-3.8-flash",
+    "gemini-3.5-flash-lite",
     generation_config={"temperature": 0.1}
 )
 
-# 星の色や形をハッキリ残しつつ、通信がフリーズしない最適サイズ（横幅1280px）に調整
+# 星の形や色はクッキリ残しつつ、通信がフリーズしない最適サイズ（横幅1280px）
 def optimize_image(file):
     img = Image.open(file)
     if img.mode in ("RGBA", "P"):
@@ -121,7 +121,7 @@ if uploaded_files:
     st.write(f"📁 アップロードされた画像: {len(uploaded_files)} 枚")
     
     if st.button("凸数を解析する", type="primary"):
-        with st.spinner("画像を最適化してAIが精密解析中...（20秒ほどお待ちください）"):
+        with st.spinner("画像を最適化してAIが精密解析中...（10〜20秒ほどお待ちください）"):
             try:
                 processed_images = [optimize_image(f) for f in uploaded_files]
 
@@ -131,9 +131,9 @@ if uploaded_files:
 【星の判定ルール】
 各武将カードの右上にある星は「必ず横一列に合計7個」並んでいます。
 左から順に黄色い星が並び、途中から灰色の暗い星になります。
-必ず「右側の暗い（灰色の）星の数」を数えて、引き算で正確に算出してください。
+密集している黄色い星を見誤らないよう、必ず「右側の暗い（灰色の）星の数」を数えて、引き算で正確に算出してください。
 
-- 灰色の星が0個（すべて黄色） ➡️ 「7」
+- 灰色の星が0個（7個すべて黄色） ➡️ 「7」
 - 灰色の星が1個だけ（黄色が6個） ➡️ 「6」
 - 灰色の星が2個（黄色が5個） ➡️ 「5」
 - 灰色の星が3個（黄色が4個） ➡️ 「4」
@@ -160,8 +160,5 @@ if uploaded_files:
                 st.text_area("解析結果（コピー用）", value=result_text, height=450)
 
             except Exception as e:
-                err_msg = str(e)
-                if "429" in err_msg:
-                    st.error("⚠️ アクセス制限です。30秒ほど待ってから再度ボタンを押してください。")
-                else:
-                    st.error(f"エラー内容: {e}")
+                # エラーの詳細をそのまま表示して原因を突き止められるようにする
+                st.error(f"エラー詳細: {e}")
