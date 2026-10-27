@@ -18,15 +18,23 @@ if not api_key:
 
 genai.configure(api_key=api_key)
 
-model = genai.GenerativeModel("gemini-3.8-flash")
+# 視覚認識モデル（温度を低くして当てずっぽうを完全排除）
+model = genai.GenerativeModel(
+    "gemini-3.8-flash",
+    generation_config={"temperature": 0.1}
+)
 
-# 画像を原寸・最高品質（品質95）で処理
+# 星の色や形をハッキリ残しつつ、通信がフリーズしない最適サイズ（横幅1280px）に調整
 def optimize_image(file):
     img = Image.open(file)
     if img.mode in ("RGBA", "P"):
         img = img.convert("RGB")
+    w, h = img.size
+    if w > 1280:
+        new_h = int(h * (1280 / w))
+        img = img.resize((1280, new_h), Image.Resampling.LANCZOS)
     buffer = io.BytesIO()
-    img.save(buffer, format="JPEG", quality=95)
+    img.save(buffer, format="JPEG", quality=80)
     buffer.seek(0)
     return Image.open(buffer)
 
@@ -113,19 +121,19 @@ if uploaded_files:
     st.write(f"📁 アップロードされた画像: {len(uploaded_files)} 枚")
     
     if st.button("凸数を解析する", type="primary"):
-        with st.spinner("画像を精密判定中...（少々お待ちください）"):
+        with st.spinner("画像を最適化してAIが精密解析中...（20秒ほどお待ちください）"):
             try:
                 processed_images = [optimize_image(f) for f in uploaded_files]
 
                 prompt = f"""
 添付されたゲーム画面（キングダム覇道）から、武将カードの星の数（凸数）を正確に特定してください。
 
-【星の判定方法（最重要）】
+【星の判定ルール】
 各武将カードの右上にある星は「必ず横一列に合計7個」並んでいます。
 左から順に黄色い星が並び、途中から灰色の暗い星になります。
-密集している黄色い星を見誤らないよう、必ず「右側の暗い（灰色の）星の数」を数えて、引き算で正確に算出してください。
+必ず「右側の暗い（灰色の）星の数」を数えて、引き算で正確に算出してください。
 
-- 灰色の星が0個（7個すべて黄色） ➡️ 「7」
+- 灰色の星が0個（すべて黄色） ➡️ 「7」
 - 灰色の星が1個だけ（黄色が6個） ➡️ 「6」
 - 灰色の星が2個（黄色が5個） ➡️ 「5」
 - 灰色の星が3個（黄色が4個） ➡️ 「4」
@@ -134,10 +142,10 @@ if uploaded_files:
 - 灰色の星が6個（黄色が1個だけ） ➡️ 「1」
 - 7個すべて灰色（黄色が0個） ➡️ 「0」
 
-※推測は禁止です。必ず各カードの右上の星の実際の点灯状態を見て判定してください。
+※推測は禁止です。各カードの星の実際の点灯状態を見て判定してください。
 
 【未所持の判定】
-- 画面内に名前が写っていないキャラ、または暗くグレーアウト（鍵付き）しているキャラは「なし」です。
+- 画面内に名前が写っていないキャラ、または暗くグレーアウト（鍵付き）しているキャラは「なし」と記載してください。
 
 【出力フォーマット】
 以下の【キャラ一覧リスト】のフォーマット通りに出力してください。余計な解説・前置きは一切不要です。
