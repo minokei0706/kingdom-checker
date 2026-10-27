@@ -6,7 +6,7 @@ import google.generativeai as genai
 st.set_page_config(page_title="キングダム覇道 凸数読み取りツール", layout="centered")
 
 st.title("🛡️ 凸数スクショ読み取りツール")
-st.caption("キャラ一覧のスクショをアップロードすると、凸数を一覧出力します。")
+st.caption("キャラ一覧のスクショをアップロードすると、凸数を正確に出力します。")
 
 api_key = st.secrets.get("GEMINI_API_KEY")
 if not api_key:
@@ -18,17 +18,21 @@ if not api_key:
 
 genai.configure(api_key=api_key)
 
-# 思考なしで爆速処理できる Flash-Lite モデルを指定
-model = genai.GenerativeModel("gemini-3.5-flash-lite")
+# 視覚認識モデル
+model = genai.GenerativeModel("gemini-3.8-flash")
 
-# 画像を極力軽量化する（長辺600px）
-def resize_image(file):
+# 横画面に合わせて高解像度（横幅1920px）をキープ
+def optimize_image(file):
     img = Image.open(file)
     if img.mode in ("RGBA", "P"):
         img = img.convert("RGB")
-    img.thumbnail((600, 600))
+    w, h = img.size
+    # 横幅が1920pxを超える場合のみリサイズ（文字と星を鮮明に残す）
+    if w > 1920:
+        new_h = int(h * (1920 / w))
+        img = img.resize((1920, new_h), Image.Resampling.LANCZOS)
     buffer = io.BytesIO()
-    img.save(buffer, format="JPEG", quality=70)
+    img.save(buffer, format="JPEG", quality=85)
     buffer.seek(0)
     return Image.open(buffer)
 
@@ -115,23 +119,28 @@ if uploaded_files:
     st.write(f"📁 アップロードされた画像: {len(uploaded_files)} 枚")
     
     if st.button("凸数を解析する", type="primary"):
-        with st.spinner("画像を最適化してAIが高速解析中...（10〜20秒ほどお待ちください）"):
+        with st.spinner("武将カードの星と名前を照合中...（30〜50秒ほどお待ちください）"):
             try:
-                processed_images = [resize_image(f) for f in uploaded_files]
+                processed_images = [optimize_image(f) for f in uploaded_files]
 
                 prompt = f"""
-添付されたゲーム画面のスクリーンショットをすべて確認し、武将の凸数（星の数: 0〜7）を特定してください。
+添付されたゲーム画面（キングダム覇道）のスクリーンショットを解析し、武将ごとの星の数（凸数）を特定してください。
 
-【出力ルール】
-- 以下の【キャラ一覧リスト】のフォーマット通りに、キャラ名の後ろに星の数（半角数字）を記載してください。
-- 未所持（グレーアウト、未解放）またはスクショ内に写っていないキャラは「なし」と記載してください。
-- 800枠は画像判定不要で、テンプレートの記述（紫夏・オギコ なし / 他は完凸）をそのまま出力してください。
-- 余計な解説は不要です。以下のフォーマットの結果テキストのみを出力してください。
+【画面構造のルール】
+1. 各武将のカード枠の「左下の黒い半透明帯」に武将名が白文字で書かれています（例: 王騎, 麃公, 嬴政, 羌瘣, 楊端和, 騰, 昭王 など）。
+2. 各武将カードの「右上（上部）」に星（★）が横一列に最大7個並んでいます。
+   - 【左から黄色く点灯している星の数】を正確に数えてください（0〜7）。
+   - 暗い星・灰色の星は消灯しているため数に入れません。
+   - 例: 王騎は左から6個黄色で1個暗いので「6」、バジオウは7個すべて黄色なので「7」、昭王は1個だけ黄色なので「1」。
+3. 右端などで半分見切れている武将は判定せず、完全に枠全体が写っている画像を優先して判定してください。
+4. 【未所持（なし）の判定】
+   - 画面内に名前が全く写っていないキャラは「なし」です。絶対に当てずっぽうで数字を埋めないでください。
+   - グレーアウト（暗くなっている、鍵付き）している武将も「なし」です。
+5. 800枠は画像判定不要で、テンプレートの固定文をそのまま出力してください。
 
 【キャラ一覧リスト】
 {character_template}
 """
-                # 思考なしのLiteモデルで一発高速処理
                 response = model.generate_content([prompt, *processed_images])
                 result_text = response.text
 
@@ -141,6 +150,6 @@ if uploaded_files:
             except Exception as e:
                 err_msg = str(e)
                 if "429" in err_msg:
-                    st.error("⚠️ 無料枠のアクセス制限（1分間に5回まで）に引っかかりました。30秒ほど待ってからもう一度ボタンを押してください。")
+                    st.error("⚠️ アクセス制限です。30秒ほど待ってから再度ボタンを押してください。")
                 else:
                     st.error(f"エラー内容: {e}")
