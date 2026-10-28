@@ -1,7 +1,6 @@
 import streamlit as st
 from PIL import Image
 import io
-import re
 import google.generativeai as genai
 
 st.set_page_config(page_title="キングダム覇道 凸数読み取りツール", layout="centered")
@@ -19,12 +18,13 @@ if not api_key:
 
 genai.configure(api_key=api_key)
 
-# 1日1,500回まで無料・高精度な主力モデルを指定
+# 一番精度が高かったモデル（当てずっぽうを排除する設定）
 model = genai.GenerativeModel(
-    "gemini-2.0-flash",
+    "gemini-3.8-flash",
     generation_config={"temperature": 0.0}
 )
 
+# あの時の「星がくっきり見えて通信も速い」最適サイズ
 def optimize_image(file):
     img = Image.open(file)
     if img.mode in ("RGBA", "P"):
@@ -34,25 +34,82 @@ def optimize_image(file):
         new_h = int(h * (1280 / w))
         img = img.resize((1280, new_h), Image.Resampling.LANCZOS)
     buffer = io.BytesIO()
-    img.save(buffer, format="JPEG", quality=85)
+    img.save(buffer, format="JPEG", quality=80)
     buffer.seek(0)
     return Image.open(buffer)
 
-# マスターリスト
-list_900 = [
-    "王騎", "(旧)楊端和", "麃公", "騰", "バジオウ", "(旧)嬴政", "(旧)羌瘣", "呉慶",
-    "輪虎", "(新)信", "蒙恬", "王賁", "蒙驁", "摎", "廉頗", "王翦", "オルド",
-    "汗明", "李牧", "呉鳳明", "桓騎", "呂不韋", "春申君", "(新)嬴政", "介億",
-    "カイネ", "傅抵", "(新)河了貂", "(新)楊端和", "龐煖", "蒙武", "万極",
-    "趙荘", "李白", "(新)羌瘣", "昭王"
-]
+character_template = """
+【900】
+王騎 
+(旧)楊端和 
+麃公 
+騰 
+バジオウ 
+(旧)嬴政 
+(旧)羌瘣 
+呉慶 
+輪虎 
+(新)信 
+蒙恬 
+王賁 
+蒙驁 
+摎 
+廉頗 
+王翦 
+オルド 
+汗明 
+李牧 
+呉鳳明 
+桓騎 
+呂不韋 
+春申君 
+(新)嬴政 
+介億 
+カイネ 
+傅抵 
+(新)河了貂 
+(新)楊端和 
+龐煖 
+蒙武 
+万極 
+趙荘 
+李白 
+(新)羌瘣 
+昭王 
 
-list_850 = [
-    "(旧)信", "漂", "壁", "録嗚未", "タジフ", "ランカイ", "シュンメン", "成蟜",
-    "縛虎申", "宮元", "介子坊", "姜燕", "関常", "陸仙", "成恢", "臨武君",
-    "項翼", "張唐", "岳雷", "晋成常", "蔡沢", "白麗", "渉孟", "馮忌",
-    "公孫龍", "李斯", "羌象"
-]
+【850】
+(旧)信 
+漂 
+壁 
+録嗚未 
+タジフ 
+ランカイ 
+シュンメン 
+成蟜 
+縛虎申 
+宮元 
+介子坊 
+姜燕 
+関常 
+陸仙 
+成恢 
+臨武君 
+項翼 
+張唐 
+岳雷 
+晋成常 
+蔡沢 
+白麗 
+渉孟 
+馮忌 
+公孫龍 
+李斯 
+羌象 
+
+【800】
+紫夏・オギコ　なし
+他は完凸
+"""
 
 uploaded_files = st.file_uploader(
     "キャラ一覧のスクショを選択（複数まとめてOK）", 
@@ -64,74 +121,40 @@ if uploaded_files:
     st.write(f"📁 アップロードされた画像: {len(uploaded_files)} 枚")
     
     if st.button("凸数を解析する", type="primary"):
-        with st.spinner("AIが画面に見えている武将だけを正確に照合中..."):
+        with st.spinner("画像を最適化してAIが高速・精密解析中...（約15〜20秒）"):
             try:
                 processed_images = [optimize_image(f) for f in uploaded_files]
 
-                prompt = """
-添付されたゲーム画面（キングダム覇道）を見て、【画面内に実際に写っている武将だけ】をリストアップしてください。
-画面に写っていない武将は絶対に書かないでください。
+                prompt = f"""
+添付されたキングダム覇道のスクリーンショットを解析し、武将ごとの凸数（星の数）を正確に特定してください。
 
-【書き出しルール】
-武将名: 星の数（0〜7）
+【星の判定ルール（最重要）】
+各武将カードの右上にある星は横一列に「合計7個」並んでいます。
+密集した黄色い星を見誤らないよう、必ず「右側の暗い（灰色の）星の数」を数えて引き算してください。
+- 灰色の星が0個（全点灯） ➡️ 「7」
+- 灰色の星が1個だけ ➡️ 「6」（※成蟜や王騎など、灰色が1個なら絶対に6です）
+- 灰色の星が2個 ➡️ 「5」
+- 灰色の星が3個 ➡️ 「4」（※麃公など）
+- 灰色の星が4個 ➡️ 「3」
+- 灰色の星が5個 ➡️ 「2」
+- 灰色の星が6個 ➡️ 「1」
+- 7個すべて灰色 ➡️ 「0」
 
-【星の数え方】
-各カードの右上にある星は横一列に合計7個です。
-右側の暗い（灰色の）星の数を数えて引き算してください。
-- 灰色0個（全点灯） ➡️ 7
-- 灰色1個 ➡️ 6
-- 灰色2個 ➡️ 5
-- 灰色3個 ➡️ 4
-- 灰色4個 ➡️ 3
-- 灰色5個 ➡️ 2
-- 灰色6個 ➡️ 1
-- すべて灰色 ➡️ 0
+【未所持のルール（推測禁止）】
+- 画像のどこにも名前が写っていないキャラ、または暗くグレーアウト（鍵付き）しているキャラは、絶対に推測で数字を埋めず「なし」と記載してください。
+- 例: 呉慶や新楊端和が画像内にいない場合は、必ず「なし」です。
 
-【注意】
-- 新旧のある武将（信、楊端和、嬴政、羌瘣、河了貂）は、外見を見て必ず「(新)信」や「(旧)楊端和」のように新旧をつけて書いてください。
-- 暗くグレーアウト（鍵付き）している未所持武将はリストに書かないでください。
-解説は一切不要です。リストの行だけを出力してください。
+【出力フォーマット】
+以下の【キャラ一覧リスト】のフォーマット通りに出力してください。余計な解説は不要です。
+
+【キャラ一覧リスト】
+{character_template}
 """
                 response = model.generate_content([prompt, *processed_images])
-                result_raw = response.text
-                
-                # AIが読み取った武将辞書
-                found_stars = {}
-
-                for line in result_raw.split("\n"):
-                    if ":" in line or "：" in line:
-                        parts = re.split(r"[:：]", line, maxsplit=1)
-                        if len(parts) == 2:
-                            raw_name = parts[0].strip()
-                            raw_val = parts[1].strip()
-                            
-                            num_match = re.search(r"[0-7]", raw_val)
-                            if num_match:
-                                star_val = num_match.group(0)
-                                for target in list_900 + list_850:
-                                    if target == raw_name:
-                                        found_stars[target] = star_val
-                                    elif "(" not in target and target == raw_name:
-                                        found_stars[target] = star_val
-                                    elif target.replace("(新)", "").replace("(旧)", "") == raw_name:
-                                        if target not in found_stars:
-                                            found_stars[target] = star_val
-
-                # テンプレート通りに組み立て（見つからなかったキャラはすべて自動で「なし」）
-                output = "【900】\n"
-                for c in list_900:
-                    star = found_stars.get(c, "なし")
-                    output += f"{c} {star}\n"
-
-                output += "\n【850】\n"
-                for c in list_850:
-                    star = found_stars.get(c, "なし")
-                    output += f"{c} {star}\n"
-
-                output += "\n【800】\n紫夏・オギコ　なし\n他は完凸\n"
+                result_text = response.text
 
                 st.success("解析完了！")
-                st.text_area("解析結果（コピー用）", value=output, height=450)
+                st.text_area("解析結果（コピー用）", value=result_text, height=450)
 
             except Exception as e:
                 st.error(f"エラー詳細: {e}")
